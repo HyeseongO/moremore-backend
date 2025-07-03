@@ -5,10 +5,15 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  Request,
   Get,
+  UseGuards,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SignUpDto } from './dtos/signup.dto';
+import { LoginDto } from './dtos/login.dto';
+import { JwtRefreshAuthGuard } from './guards/jwt-refresh.guard';
+import { JwtAuthGuard } from './guards/jwt.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -39,5 +44,35 @@ export class AuthController {
       };
     }
     return this.authService.checkRepeatedEmail(email);
+  }
+
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  async login(@Body() loginDto: LoginDto) {
+    return this.authService.login(loginDto);
+  }
+
+  @Post('refresh')
+  @UseGuards(JwtRefreshAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async refreshTokens(@Request() req) {
+    const userId = req.user.sub;
+    const refreshToken = req.user.refreshToken;
+    return this.authService.refreshTokens(userId, refreshToken);
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async logout(@Request() req) {
+    return this.authService.logout(req.user.id);
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  async getMe(@Request() req) {
+    return {
+      user: req.user,
+    };
   }
 }
