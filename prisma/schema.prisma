@@ -13,24 +13,75 @@ model User {
   nickname      String   @unique
   password      String?
 
-
   authProvider  AuthProvider @default(EMAIL)
   googleId      String?      @unique
   googleEmail   String?
   profileImage  String?
-
 
   refreshToken  String?
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  ownedRooms    StudyRoom[]      @relation("RoomOwner")
+  joinedRooms   StudyRoomMember[]
+
   @@index([email])
   @@index([nickname])
   @@index([googleId])
 }
 
+model StudyRoom {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String?  @db.Text
+  roomType    RoomType
+  maxMembers  Int
+
+  inviteCode  String   @unique @default(cuid())
+
+  isActive    Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ownerId     Int
+  owner       User     @relation("RoomOwner", fields: [ownerId], references: [id])
+
+  members     StudyRoomMember[]
+
+  @@index([inviteCode])
+  @@index([ownerId])
+}
+
+model StudyRoomMember {
+  id        Int         @id @default(autoincrement())
+  role      MemberRole  @default(MEMBER)
+  joinedAt  DateTime    @default(now())
+
+  userId    Int
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  roomId    Int
+  room      StudyRoom   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roomId])
+  @@index([userId])
+  @@index([roomId])
+}
+
 enum AuthProvider {
   EMAIL
   GOOGLE
+}
+
+enum RoomType {
+  SMALL
+  LARGE
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
 }
