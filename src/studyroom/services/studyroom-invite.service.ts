@@ -15,7 +15,7 @@ export class StudyroomInviteService {
     private configService: ConfigService,
   ) {
     this.frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5137';
+      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
   }
 
   async getByInviteCode(inviteCode: string) {

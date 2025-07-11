@@ -109,4 +109,17 @@ export class StudyroomService {
   async deactivate(id: number) {
     return this.studyroomRepository.deactivate(id);
   }
+
+  async findOne(id: number) {
+    console.log('findOne called with id:', id);
+    return this.findById(id);
+  }
+
+  async checkMembership(roomId: number, userId: number): Promise<boolean> {
+    const member = await this.memberRepository.findByUserAndRoom(
+      userId,
+      roomId,
+    );
+    return !!member;
+  }
 }

@@ -15,18 +15,21 @@ export class AuthResponseService {
     const isProduction = this.configService.get('NODE_ENV') === 'production';
     const domain = this.configService.get<string>('COOKIE_DOMAIN');
 
+    /**
+     * localhost 쓰는 동안은 secure: false로 처리. (secure: isProduction,)
+     */
     res.cookie('accessToken', tokens.accessToken, {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? 'strict' : 'lax',
+      secure: false,
+      sameSite: 'lax',
       maxAge: 15 * 60 * 1000,
       ...(domain && { domain }),
     });
 
     res.cookie('refreshToken', tokens.refreshToken, {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? 'strict' : 'lax',
+      secure: false,
+      sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
       ...(domain && { domain }),
     });

@@ -362,4 +362,16 @@ export class AuthService {
     const { password, refreshToken, ...sanitizedUser } = user;
     return sanitizedUser;
   }
+
+  async validateAccessToken(token: string): Promise<User | null> {
+    try {
+      const payload = await this.jwtService.verifyAsync<{
+        sub: number;
+        email: string;
+      }>(token, { secret: this.configService.get<string>('JWT_SECRET') });
+      return this.findUserById(payload.sub);
+    } catch {
+      return null;
+    }
+  }
 }

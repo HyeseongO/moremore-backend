@@ -20,8 +20,7 @@ async function bootstrap() {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
-
-  app.enableCors({ origin: 'http://localhost:5173', credentials: true });
-  await app.listen(process.env.PORT ?? 3000);
+  const port = process.env.PORT || 8000;
+  await app.listen(port);
 }
 bootstrap();

@@ -29,10 +29,12 @@ export class StudyroomRepository {
   }
 
   async findById(id: number, include?: Prisma.StudyRoomInclude) {
-    return this.prisma.studyRoom.findUnique({
+    const result = this.prisma.studyRoom.findUnique({
       where: { id },
       include,
     });
+
+    return result;
   }
 
   async findByInviteCode(
