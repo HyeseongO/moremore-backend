@@ -98,29 +98,36 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   async handleConnection(client: SocketWithUser) {
-    const cookies = client.handshake.headers.cookie;
+    console.log('🔌 New connection attempt');
 
-    if (!cookies) {
-      console.log('No cookies, disconnecting');
+    let token: string | undefined;
+
+    if (client.handshake.auth?.token) {
+      console.log('Token from auth object');
+      token = client.handshake.auth.token;
+    }
+
+    if (!token) {
+      const cookies = client.handshake.headers.cookie;
+      if (cookies) {
+        console.log('Checking cookies:', cookies);
+        const cookieObj = cookies
+          .split(';')
+          .reduce<Record<string, string>>((acc, cookie) => {
+            const [key, value] = cookie.trim().split('=');
+            acc[key] = value;
+            return acc;
+          }, {});
+        token = cookieObj.accessToken;
+      }
+    }
+
+    if (!token) {
+      console.log('No token found in auth or cookies');
       return client.disconnect();
     }
 
     try {
-      const cookieObj = cookies
-        .split(';')
-        .reduce<Record<string, string>>((acc, cookie) => {
-          const [key, value] = cookie.trim().split('=');
-          acc[key] = value;
-          return acc;
-        }, {});
-
-      const token = cookieObj.accessToken;
-
-      if (!token) {
-        console.log('No accessToken in cookies');
-        return client.disconnect();
-      }
-
       const user = await this.authService.validateAccessToken(token);
 
       if (!user) {
@@ -134,6 +141,8 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
         userId: user.id,
         nickname: user.nickname,
       });
+
+      console.log('✅ User connected:', user.nickname);
     } catch (error) {
       console.error('❌ Connection error:', error);
       client.disconnect();
