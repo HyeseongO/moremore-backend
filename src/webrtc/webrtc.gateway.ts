@@ -9,6 +9,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { AuthService } from 'src/auth/auth.service';
+import { ChatService } from 'src/chat/chat.service';
 import { StudyroomService } from 'src/studyroom/services/studyroom.service';
 
 interface SocketWithUser extends Socket {
@@ -29,6 +30,7 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private authService: AuthService,
     private readonly studyRoomService: StudyroomService,
+    private readonly chatService: ChatService,
   ) {}
 
   @WebSocketServer()
@@ -91,6 +93,13 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.emit('existing-users', existingUsers);
 
       this.sendRoomInfo(roomId);
+
+      const recentMessages = await this.chatService.getMessages(
+        parseInt(roomId),
+        20,
+      );
+
+      client.emit('messages-history', recentMessages.reverse());
     } catch (error) {
       console.error('Join room error:', error);
       client.emit('error', { message: '방 입장 중 오류가 발생했습니다.' });
@@ -222,6 +231,101 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } catch (error) {
       client.emit('test-result', { error: error.message });
     }
+  }
+
+  @SubscribeMessage('send-message')
+  async handleSendMessage(
+    @ConnectedSocket() client: SocketWithUser,
+    @MessageBody() payload: { roomId: string; content: string },
+  ) {
+    try {
+      if (!client.user) {
+        client.emit('error', { message: '인증이 필요합니다.' });
+        return;
+      }
+
+      const isMember = await this.studyRoomService.checkMembership(
+        parseInt(payload.roomId),
+        client.user.id,
+      );
+
+      if (!isMember) {
+        client.emit('error', { message: '스터디룸 멤버가 아닙니다.' });
+        return;
+      }
+
+      const savedMessage = await this.chatService.saveMessage(
+        parseInt(payload.roomId),
+        client.user.id,
+        payload.content,
+      );
+
+      this.server.to(payload.roomId).emit('new-message', {
+        id: savedMessage.id,
+        content: savedMessage.content,
+        sender: {
+          id: savedMessage.sender.id,
+          nickname: savedMessage.sender.nickname,
+        },
+        createdAt: savedMessage.createdAt,
+      });
+    } catch (error) {
+      console.error('Send message error:', error);
+      client.emit('error', { message: '메시지 전송 중 오류가 발생했습니다.' });
+    }
+  }
+
+  @SubscribeMessage('get-messages')
+  async handleGetMessages(
+    @ConnectedSocket() client: SocketWithUser,
+    @MessageBody() payload: { roomId: string; limit?: number; offset?: number },
+  ) {
+    try {
+      const messages = await this.chatService.getMessages(
+        parseInt(payload.roomId),
+        payload.limit || 50,
+        payload.offset || 0,
+      );
+
+      client.emit('messages-history', messages.reverse());
+    } catch (error) {
+      console.error('Get messages error:', error);
+      client.emit('error', { message: '메시지 조회 중 오류가 발생했습니다.' });
+    }
+  }
+
+  @SubscribeMessage('delete-message')
+  async handleDeleteMessage(
+    @ConnectedSocket() client: SocketWithUser,
+    @MessageBody() payload: { messageId: number; roomId: string },
+  ) {
+    try {
+      if (!client.user) {
+        client.emit('error', { message: '인증이 필요합니다.' });
+        return;
+      }
+
+      await this.chatService.deleteMessage(payload.messageId, client.user.id);
+
+      this.server.to(payload.roomId).emit('message-deleted', {
+        messageId: payload.messageId,
+      });
+    } catch (error) {
+      console.error('Delete message error:', error);
+      client.emit('error', { message: error.message });
+    }
+  }
+
+  @SubscribeMessage('typing')
+  handleTyping(
+    @ConnectedSocket() client: SocketWithUser,
+    @MessageBody() payload: { roomId: string; isTyping: boolean },
+  ) {
+    client.to(payload.roomId).emit('user-typing', {
+      userId: client.user?.id,
+      nickname: client.user?.nickname,
+      isTyping: payload.isTyping,
+    });
   }
 
   private removeFromAllRooms(clientId: string) {

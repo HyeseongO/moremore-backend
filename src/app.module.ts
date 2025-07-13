@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { StudyroomModule } from './studyroom/studyroom.module';
 import { WebrtcModule } from './webrtc/webrtc.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { WebrtcModule } from './webrtc/webrtc.module';
     PrismaModule,
     StudyroomModule,
     WebrtcModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [AppService],
