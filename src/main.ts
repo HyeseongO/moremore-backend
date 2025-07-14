@@ -20,7 +20,7 @@ async function bootstrap() {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
-  const port = process.env.PORT || 8000;
+  const port = process.env.PORT || 8080;
   await app.listen(port);
 }
 bootstrap();
