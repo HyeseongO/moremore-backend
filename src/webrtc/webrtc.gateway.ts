@@ -36,7 +36,6 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  private rooms: Map<string, Set<string>> = new Map();
   private userSocketMap: Map<string, { userId: number; nickname: string }> =
     new Map();
 
@@ -46,6 +45,9 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() roomId: string,
   ) {
     try {
+      const room = this.server.sockets.adapter.rooms.get(roomId);
+      const userCount = room ? room.size : 0;
+
       const studyRoom = await this.studyRoomService.findOne(parseInt(roomId));
       if (!studyRoom) {
         client.emit('error', { message: '존재하지 않는 스터디룸입니다.' });
@@ -68,23 +70,29 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }
       }
 
-      let room = this.rooms.get(roomId);
-      if (!room) {
-        room = new Set<string>();
-        this.rooms.set(roomId, room);
-      }
-
-      if (room.size >= studyRoom.maxMembers) {
+      if (userCount >= studyRoom.maxMembers) {
         client.emit('room-full', {
-          message: `최대 ${studyRoom.maxMembers}명까지 입장 가능합니다.`,
+          message: `최대 ${studyRoom.maxMembers}명까지 입장 가능 합니다.`,
         });
         return;
       }
 
-      client.join(roomId);
-      room.add(client.id);
+      if (room?.has(client.id)) {
+        console.log(`${client.id} 이미 존재합니다! (${roomId})`);
+        return;
+      }
 
-      client.to(roomId).emit('user-joined', {
+      await client.join(roomId);
+      await this.broadcastRoomCount(roomId);
+
+      const size = this.getRoomSize(roomId);
+      this.server.to(roomId).emit('user-joined', {
+        userId: client.id,
+        nickname: await this.getUserNickname(client.id),
+      });
+      this.sendRoomInfo(roomId);
+
+      this.server.to(roomId).emit('user-joined', {
         userId: client.id,
         nickname: await this.getUserNickname(client.id),
       });
@@ -106,8 +114,18 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  @SubscribeMessage('leave-room')
+  handleLeaveRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() roomId: string,
+  ) {
+    client.leave(roomId);
+    this.server.to(roomId).emit('user-left', client.id);
+    this.broadcastRoomCount(roomId);
+  }
+
   async handleConnection(client: SocketWithUser) {
-    console.log('🔌 New connection attempt');
+    console.log('New connection attempt');
 
     let token: string | undefined;
 
@@ -160,7 +178,16 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   handleDisconnect(client: Socket) {
     console.log(`Client disconnected: ${client.id}`);
-    this.removeFromAllRooms(client.id);
+
+    const rooms = this.server.sockets.adapter.rooms;
+    rooms.forEach((members, roomId) => {
+      if (members.has(client.id)) {
+        this.server.to(roomId).emit('user-left', client.id);
+        this.broadcastRoomCount(roomId);
+      }
+    });
+
+    this.userSocketMap.delete(client.id);
   }
 
   @SubscribeMessage('offer')
@@ -328,19 +355,22 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
-  private removeFromAllRooms(clientId: string) {
-    this.rooms.forEach((users, roomId) => {
-      if (users.has(clientId)) {
-        users.delete(clientId);
-        this.server.to(roomId).emit('user-left', clientId);
+  @SubscribeMessage('getActiveUsers')
+  handleGetActiveUsers(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { roomId: string },
+  ) {
+    const count =
+      this.server.sockets.adapter.rooms.get(payload.roomId)?.size ?? 0;
+    client.emit('activeUserUpdate', { roomId: payload.roomId, count });
+  }
 
-        this.sendRoomInfo(roomId);
+  private getRoom(roomId: string) {
+    return this.server.sockets.adapter.rooms.get(roomId);
+  }
 
-        if (users.size === 0) {
-          this.rooms.delete(roomId);
-        }
-      }
-    });
+  private getRoomSize(roomId: string) {
+    return this.getRoom(roomId)?.size ?? 0;
   }
 
   private async getUserNickname(socketId: string): Promise<string> {
@@ -348,37 +378,55 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return userInfo?.nickname || 'Unknown User';
   }
 
-  private async getExistingUsersInfo(
-    roomId: string,
-    excludeSocketId: string,
-  ): Promise<Array<{ userId: string; nickname: string }>> {
-    const room = this.rooms.get(roomId);
+  private async getExistingUsersInfo(roomId: string, excludeSocketId = '') {
+    const room = this.server.sockets.adapter.rooms.get(roomId);
     if (!room) return [];
 
-    const users = [...room].filter((id) => id !== excludeSocketId);
-    return users.map((socketId) => ({
-      userId: socketId,
-      nickname: this.userSocketMap.get(socketId)?.nickname || 'Unknown User',
-    }));
+    return [...room]
+      .filter((id) => id !== excludeSocketId)
+      .map((id) => ({
+        userId: id,
+        nickname: this.userSocketMap.get(id)?.nickname || 'Unknown',
+      }));
+  }
+
+  private async broadcastRoomCount(roomId: string) {
+    const currentMembers = this.getRoomSize(roomId);
+    const studyRoom = await this.studyRoomService.findOne(+roomId);
+
+    if (!studyRoom) return;
+
+    const payload = {
+      roomId,
+      title: studyRoom.title,
+      currentMembers,
+      maxMembers: studyRoom.maxMembers,
+    };
+
+    if (currentMembers > 0) {
+      this.server.to(roomId).emit('room-info', payload);
+    }
+
+    this.server.emit('room-count-update', payload);
   }
 
   private async sendRoomInfo(roomId: string) {
-    const room = this.rooms.get(roomId);
-    if (!room) return;
+    const roomSize = this.getRoomSize(roomId);
+    if (roomSize === 0) return;
 
     try {
-      const studyRoom = await this.studyRoomService.findOne(parseInt(roomId));
+      const studyRoom = await this.studyRoomService.findOne(+roomId);
       if (studyRoom) {
         this.server.to(roomId).emit('room-info', {
-          roomId: roomId,
+          roomId,
           title: studyRoom.title,
-          currentMembers: room.size,
+          currentMembers: roomSize,
           maxMembers: studyRoom.maxMembers,
-          participants: await this.getExistingUsersInfo(roomId, ''),
+          participants: await this.getExistingUsersInfo(roomId),
         });
       }
-    } catch (error) {
-      console.error('Send room info error:', error);
+    } catch (err) {
+      console.error('sendRoomInfo error:', err);
     }
   }
 }
