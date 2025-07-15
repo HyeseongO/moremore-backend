@@ -54,8 +54,12 @@ model StudyRoom {
   members     StudyRoomMember[]
   messages    ChatMessage[]
 
+  isDeleted   Boolean  @default(false)
+  deletedAt   DateTime? @db.Timestamp(6)
+
   @@index([inviteCode])
   @@index([ownerId])
+  @@index([isDeleted])
 }
 
 model StudyRoomMember {
