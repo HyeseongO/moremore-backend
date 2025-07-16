@@ -10,6 +10,7 @@ import {
   Request,
   ParseIntPipe,
   Query,
+  Req,
 } from '@nestjs/common';
 import { StudyroomService } from '../services/studyroom.service';
 import { StudyroomMemberService } from '../services/studyroom-member.service';
@@ -131,5 +132,13 @@ export class StudyroomController {
       transferOwnershipDto.newOwnerId,
     );
     return { message: '방장 권한이 이전되었습니다.' };
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  async delete(@Param('id', ParseIntPipe) id: number, @Req() req) {
+    const userId = req.user['id'];
+    await this.studyroomService.deleteStudyRoom(id, userId);
+    return { success: true };
   }
 }

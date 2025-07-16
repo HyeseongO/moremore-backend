@@ -1,3 +1,4 @@
+import { forwardRef, Inject } from '@nestjs/common';
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -28,7 +29,8 @@ interface SocketWithUser extends Socket {
 })
 export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
-    private authService: AuthService,
+    private readonly authService: AuthService,
+    @Inject(forwardRef(() => StudyroomService))
     private readonly studyRoomService: StudyroomService,
     private readonly chatService: ChatService,
   ) {}
@@ -428,5 +430,11 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } catch (err) {
       console.error('sendRoomInfo error:', err);
     }
+  }
+
+  public alertRoomDeleted(roomId: number) {
+    this.server.to(roomId.toString()).emit('room-deleted', {
+      message: '방이 삭제되었습니다.',
+    });
   }
 }

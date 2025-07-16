@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { StudyroomController } from './controllers/studyroom.controller';
 import { StudyroomService } from './services/studyroom.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
@@ -8,9 +8,10 @@ import { StudyroomInviteService } from './services/studyroom-invite.service';
 import { StudyroomAuthService } from './services/studyroom-auth.service';
 import { StudyroomMemberRepository } from './repositories/studyroom-member.repository';
 import { StudyroomRepository } from './repositories/studyroom.repository';
+import { WebrtcModule } from 'src/webrtc/webrtc.module';
 
 @Module({
-  imports: [PrismaModule, ConfigModule],
+  imports: [PrismaModule, ConfigModule, forwardRef(() => WebrtcModule)],
   controllers: [StudyroomController],
   providers: [
     StudyroomService,

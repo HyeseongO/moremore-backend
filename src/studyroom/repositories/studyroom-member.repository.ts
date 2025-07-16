@@ -33,7 +33,7 @@ export class StudyroomMemberRepository {
     return this.prisma.studyRoomMember.findMany({
       where: {
         userId,
-        room: { isActive: true },
+        room: { isActive: true, isDeleted: false },
       },
       include: {
         room: {

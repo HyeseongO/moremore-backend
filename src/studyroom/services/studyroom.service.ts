@@ -1,15 +1,26 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  forwardRef,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { StudyroomRepository } from '../repositories/studyroom.repository';
 import { StudyroomMemberRepository } from '../repositories/studyroom-member.repository';
 import { CreateStudyroomDto } from '../dtos/create-studyroom-dto';
 import { UpdateStudyroomDto } from '../dtos/update-studyroom.dto';
 import { RoomType, MemberRole } from '@prisma/client';
+import { StudyroomAuthService } from './studyroom-auth.service';
+import { WebRTCGateway } from 'src/webrtc/webrtc.gateway';
 
 @Injectable()
 export class StudyroomService {
   constructor(
-    private studyroomRepository: StudyroomRepository,
-    private memberRepository: StudyroomMemberRepository,
+    private readonly studyroomRepository: StudyroomRepository,
+    private readonly memberRepository: StudyroomMemberRepository,
+    private readonly studyRoomAuthService: StudyroomAuthService,
+    @Inject(forwardRef(() => WebRTCGateway))
+    private readonly gateway: WebRTCGateway,
   ) {}
 
   async create(userId: number, dto: CreateStudyroomDto) {
@@ -111,7 +122,6 @@ export class StudyroomService {
   }
 
   async findOne(id: number) {
-    console.log('findOne called with id:', id);
     return this.findById(id);
   }
 
@@ -121,5 +131,20 @@ export class StudyroomService {
       roomId,
     );
     return !!member;
+  }
+
+  async deleteStudyRoom(roomId: number, requestId: number) {
+    const room = await this.findOne(roomId);
+    if (!room) throw new NotFoundException('존재하지 않는 스터디룸 입니다.');
+
+    if (room.ownerId !== requestId) {
+      const isAdmin = await this.studyRoomAuthService.verifyAdminOrOwner(
+        roomId,
+        requestId,
+      );
+      if (!isAdmin) throw new ForbiddenException('삭제 권한이 없습니다');
+    }
+    await this.studyroomRepository.softDeleteRoom(roomId);
+    this.gateway.alertRoomDeleted(roomId);
   }
 }

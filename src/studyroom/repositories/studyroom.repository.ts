@@ -67,4 +67,11 @@ export class StudyroomRepository {
       data: { isActive: false },
     });
   }
+
+  async softDeleteRoom(id: number) {
+    return this.prisma.studyRoom.update({
+      where: { id },
+      data: { isDeleted: true, deletedAt: new Date() },
+    });
+  }
 }
