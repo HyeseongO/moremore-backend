@@ -23,7 +23,7 @@ interface SocketWithUser extends Socket {
 
 @WebSocketGateway({
   cors: {
-    origin: 'http://localhost:5173',
+    origin: (_origin, callback) => callback(null, process.env.FRONTEND_URL),
     credentials: true,
   },
 })
@@ -171,9 +171,9 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
         nickname: user.nickname,
       });
 
-      console.log('✅ User connected:', user.nickname);
+      console.log('User connected:', user.nickname);
     } catch (error) {
-      console.error('❌ Connection error:', error);
+      console.error('Connection error:', error);
       client.disconnect();
     }
   }
