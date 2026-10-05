@@ -45,9 +45,17 @@ export class StudyroomInviteService {
   async joinByInviteCode(userId: number, inviteCode: string) {
     const studyroom = await this.getByInviteCode(inviteCode);
 
-    await this.memberService.join(userId, studyroom.id);
+    let alreadyMember = false;
+    try {
+      await this.memberService.join(userId, studyroom.id);
+    } catch (error) {
+      if (!(await this.authService.isMember(studyroom.id, userId))) {
+        throw error;
+      }
+      alreadyMember = true;
+    }
 
-    return this.studyroomRepository.findById(studyroom.id, {
+    const room = await this.studyroomRepository.findById(studyroom.id, {
       owner: {
         select: {
           id: true,
@@ -70,6 +78,8 @@ export class StudyroomInviteService {
         select: { members: true },
       },
     });
+
+    return { ...room, alreadyMember };
   }
 
   async regenerateInviteCode(roomId: number, userId: number) {
