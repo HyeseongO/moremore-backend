@@ -22,12 +22,14 @@ import { JwtAuthGuard } from './guards/jwt.guard';
 import { GoogleCallbackGuard } from './guards/google-callback.guard';
 import { AuthGuard } from '@nestjs/passport';
 import { ErrorCode } from '../common/errors/error-code';
+import { DemoAccountService } from './demo-account.service';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly authResponseService: AuthResponseService,
+    private readonly demoAccountService: DemoAccountService,
   ) {}
 
   @Post('signup')
@@ -139,10 +141,15 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  async getMe(@Request() req) {
+  async getMe(@Request() req: { user: { email: string } }) {
     return {
       success: true,
-      data: { user: req.user },
+      data: {
+        user: {
+          ...req.user,
+          isDemo: this.demoAccountService.isDemoAccount(req.user.email),
+        },
+      },
     };
   }
 

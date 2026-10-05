@@ -37,6 +37,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         nickname: true,
         authProvider: true,
         profileImage: true,
+        createdAt: true,
       },
     });
 
