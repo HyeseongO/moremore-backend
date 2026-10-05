@@ -7,6 +7,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { StudyroomModule } from './studyroom/studyroom.module';
 import { WebrtcModule } from './webrtc/webrtc.module';
 import { ChatModule } from './chat/chat.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { ChatModule } from './chat/chat.module';
     StudyroomModule,
     WebrtcModule,
     ChatModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
