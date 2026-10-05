@@ -9,10 +9,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SignUpDto } from './dtos/signup.dto';
 import { LoginDto } from './dtos/login.dto';
 import * as bcrypt from 'bcrypt';
+import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import { AuthProvider, User } from '@prisma/client';
 import { ErrorCode } from '../common/errors/error-code';
 
-interface AuthTokens {
+export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
 }
@@ -160,6 +161,12 @@ export class AuthService {
     return tokens;
   }
 
+  async issueTokens(userId: number, email: string): Promise<AuthTokens> {
+    const tokens = await this.generateTokens(userId, email);
+    await this.saveRefreshToken(userId, tokens.refreshToken);
+    return tokens;
+  }
+
   async logout(userId: number): Promise<void> {
     await this.clearRefreshToken(userId);
   }
@@ -259,8 +266,7 @@ export class AuthService {
       });
     }
 
-    const isValid = await bcrypt.compare(refreshToken, user.refreshToken);
-    if (!isValid) {
+    if (!this.matchesRefreshToken(refreshToken, user.refreshToken)) {
       throw new UnauthorizedException({
         code: ErrorCode.INVALID_TOKEN,
         message: '유효하지 않은 토큰입니다.',
@@ -347,13 +353,16 @@ export class AuthService {
         secret: this.configService.get<string>('JWT_SECRET'),
         expiresIn: this.configService.get<string>('JWT_EXPIRES_IN', '15m'),
       }),
-      this.jwtService.signAsync(payload, {
-        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-        expiresIn: this.configService.get<string>(
-          'JWT_REFRESH_EXPIRES_IN',
-          '7d',
-        ),
-      }),
+      this.jwtService.signAsync(
+        { ...payload, jti: randomUUID() },
+        {
+          secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+          expiresIn: this.configService.get<string>(
+            'JWT_REFRESH_EXPIRES_IN',
+            '7d',
+          ),
+        },
+      ),
     ]);
 
     return { accessToken, refreshToken };
@@ -370,11 +379,25 @@ export class AuthService {
     userId: number,
     refreshToken: string,
   ): Promise<void> {
-    const hashedRefreshToken = await this.hashPassword(refreshToken);
     await this.prisma.user.update({
       where: { id: userId },
-      data: { refreshToken: hashedRefreshToken },
+      data: { refreshToken: this.hashRefreshToken(refreshToken) },
     });
+  }
+
+  private hashRefreshToken(refreshToken: string): string {
+    return createHash('sha256').update(refreshToken).digest('hex');
+  }
+
+  private matchesRefreshToken(
+    refreshToken: string,
+    storedHash: string,
+  ): boolean {
+    const actual = Buffer.from(this.hashRefreshToken(refreshToken), 'hex');
+    const expected = Buffer.from(storedHash, 'hex');
+    return (
+      actual.length === expected.length && timingSafeEqual(actual, expected)
+    );
   }
 
   private async clearRefreshToken(userId: number): Promise<void> {
