@@ -10,6 +10,7 @@ import {
   Get,
   UseGuards,
   BadRequestException,
+  Header,
 } from '@nestjs/common';
 import { Response as Res } from 'express';
 import { AuthService } from './auth.service';
@@ -134,6 +135,17 @@ export class AuthController {
     return {
       success: true,
       data: { user: req.user },
+    };
+  }
+
+  @Get('socket-token')
+  @UseGuards(JwtAuthGuard)
+  @Header('Cache-Control', 'no-store')
+  async getSocketToken(@Request() req: { user: { id: number } }) {
+    const token = await this.authService.generateSocketToken(req.user.id);
+    return {
+      success: true,
+      data: { token },
     };
   }
 

@@ -363,6 +363,29 @@ export class AuthService {
     return sanitizedUser;
   }
 
+  async generateSocketToken(userId: number): Promise<string> {
+    return this.jwtService.signAsync(
+      { sub: userId, type: 'socket' },
+      {
+        secret: this.configService.get<string>('JWT_SECRET'),
+        expiresIn: '1m',
+      },
+    );
+  }
+
+  async validateSocketToken(token: string): Promise<User | null> {
+    try {
+      const payload = await this.jwtService.verifyAsync<{
+        sub: number;
+        type?: string;
+      }>(token, { secret: this.configService.get<string>('JWT_SECRET') });
+      if (payload.type !== 'socket') return null;
+      return this.findUserById(payload.sub);
+    } catch {
+      return null;
+    }
+  }
+
   async validateAccessToken(token: string): Promise<User | null> {
     try {
       const payload = await this.jwtService.verifyAsync<{

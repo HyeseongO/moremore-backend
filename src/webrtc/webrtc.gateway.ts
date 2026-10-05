@@ -10,7 +10,7 @@ import {
   MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { StudyRoom } from '@prisma/client';
+import { StudyRoom, User } from '@prisma/client';
 import { AuthService } from 'src/auth/auth.service';
 import { ChatService } from 'src/chat/chat.service';
 import { StudyroomService } from 'src/studyroom/services/studyroom.service';
@@ -148,10 +148,7 @@ export class WebRTCGateway
   }
 
   private async authenticate(client: SocketWithUser) {
-    const token = this.extractToken(client);
-    if (!token) throw new Error('No token found in auth or cookies');
-
-    const user = await this.authService.validateAccessToken(token);
+    const user = await this.resolveUser(client);
     if (!user) throw new Error('Invalid token');
 
     client.user = user;
@@ -161,10 +158,18 @@ export class WebRTCGateway
     });
   }
 
-  private extractToken(client: Socket): string | undefined {
+  private async resolveUser(client: Socket): Promise<User | null> {
     const authToken: unknown = client.handshake.auth?.token;
-    if (typeof authToken === 'string' && authToken) return authToken;
+    if (typeof authToken === 'string' && authToken) {
+      return this.authService.validateSocketToken(authToken);
+    }
 
+    const accessToken = this.extractCookieToken(client);
+    if (!accessToken) throw new Error('No token found in auth or cookies');
+    return this.authService.validateAccessToken(accessToken);
+  }
+
+  private extractCookieToken(client: Socket): string | undefined {
     const cookies = client.handshake.headers.cookie;
     if (!cookies) return undefined;
 
