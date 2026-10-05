@@ -1,8 +1,9 @@
-import { forwardRef, Inject } from '@nestjs/common';
+import { forwardRef, HttpException, Inject } from '@nestjs/common';
 import {
   WebSocketGateway,
   WebSocketServer,
   SubscribeMessage,
+  OnGatewayInit,
   OnGatewayConnection,
   OnGatewayDisconnect,
   ConnectedSocket,
@@ -27,7 +28,9 @@ interface SocketWithUser extends Socket {
     credentials: true,
   },
 })
-export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class WebRTCGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
   constructor(
     private readonly authService: AuthService,
     @Inject(forwardRef(() => StudyroomService))
@@ -87,22 +90,15 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
       await client.join(roomId);
       await this.broadcastRoomCount(roomId);
 
-      const size = this.getRoomSize(roomId);
-      this.server.to(roomId).emit('user-joined', {
+      client.to(roomId).emit('user-joined', {
         userId: client.id,
-        nickname: await this.getUserNickname(client.id),
-      });
-      this.sendRoomInfo(roomId);
-
-      this.server.to(roomId).emit('user-joined', {
-        userId: client.id,
-        nickname: await this.getUserNickname(client.id),
+        nickname: this.getUserNickname(client.id),
       });
 
-      const existingUsers = await this.getExistingUsersInfo(roomId, client.id);
+      const existingUsers = this.getExistingUsersInfo(roomId, client.id);
       client.emit('existing-users', existingUsers);
 
-      this.sendRoomInfo(roomId);
+      void this.sendRoomInfo(roomId);
 
       const recentMessages = await this.chatService.getMessages(
         parseInt(roomId),
@@ -112,84 +108,85 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.emit('messages-history', recentMessages.reverse());
     } catch (error) {
       console.error('Join room error:', error);
-      client.emit('error', { message: '방 입장 중 오류가 발생했습니다.' });
+      client.emit('error', {
+        message:
+          error instanceof HttpException
+            ? error.message
+            : '방 입장 중 오류가 발생했습니다.',
+      });
     }
   }
 
   @SubscribeMessage('leave-room')
-  handleLeaveRoom(
+  async handleLeaveRoom(
     @ConnectedSocket() client: Socket,
     @MessageBody() roomId: string,
   ) {
-    client.leave(roomId);
-    this.server.to(roomId).emit('user-left', client.id);
-    this.broadcastRoomCount(roomId);
+    await client.leave(roomId);
+    this.notifyUserLeft(roomId, client.id);
   }
 
-  async handleConnection(client: SocketWithUser) {
-    console.log('New connection attempt');
+  afterInit(server: Server) {
+    server.use((client: SocketWithUser, next) => {
+      this.authenticate(client)
+        .then(() => next())
+        .catch((error: Error) => {
+          console.log(error.message);
+          next(new Error('Unauthorized'));
+        });
+    });
+  }
 
-    let token: string | undefined;
+  handleConnection(client: SocketWithUser) {
+    console.log('User connected:', client.user?.nickname);
 
-    if (client.handshake.auth?.token) {
-      console.log('Token from auth object');
-      token = client.handshake.auth.token;
-    }
-
-    if (!token) {
-      const cookies = client.handshake.headers.cookie;
-      if (cookies) {
-        console.log('Checking cookies:', cookies);
-        const cookieObj = cookies
-          .split(';')
-          .reduce<Record<string, string>>((acc, cookie) => {
-            const [key, value] = cookie.trim().split('=');
-            acc[key] = value;
-            return acc;
-          }, {});
-        token = cookieObj.accessToken;
-      }
-    }
-
-    if (!token) {
-      console.log('No token found in auth or cookies');
-      return client.disconnect();
-    }
-
-    try {
-      const user = await this.authService.validateAccessToken(token);
-
-      if (!user) {
-        console.log('Invalid token, disconnecting');
-        return client.disconnect();
-      }
-
-      client.user = user;
-
-      this.userSocketMap.set(client.id, {
-        userId: user.id,
-        nickname: user.nickname,
+    client.on('disconnecting', () => {
+      const roomIds = [...client.rooms].filter((id) => id !== client.id);
+      client.once('disconnect', () => {
+        roomIds.forEach((roomId) => this.notifyUserLeft(roomId, client.id));
       });
-
-      console.log('User connected:', user.nickname);
-    } catch (error) {
-      console.error('Connection error:', error);
-      client.disconnect();
-    }
+    });
   }
 
   handleDisconnect(client: Socket) {
     console.log(`Client disconnected: ${client.id}`);
-
-    const rooms = this.server.sockets.adapter.rooms;
-    rooms.forEach((members, roomId) => {
-      if (members.has(client.id)) {
-        this.server.to(roomId).emit('user-left', client.id);
-        this.broadcastRoomCount(roomId);
-      }
-    });
-
     this.userSocketMap.delete(client.id);
+  }
+
+  private async authenticate(client: SocketWithUser) {
+    const token = this.extractToken(client);
+    if (!token) throw new Error('No token found in auth or cookies');
+
+    const user = await this.authService.validateAccessToken(token);
+    if (!user) throw new Error('Invalid token');
+
+    client.user = user;
+    this.userSocketMap.set(client.id, {
+      userId: user.id,
+      nickname: user.nickname,
+    });
+  }
+
+  private extractToken(client: Socket): string | undefined {
+    const authToken: unknown = client.handshake.auth?.token;
+    if (typeof authToken === 'string' && authToken) return authToken;
+
+    const cookies = client.handshake.headers.cookie;
+    if (!cookies) return undefined;
+
+    const cookieObj = cookies
+      .split(';')
+      .reduce<Record<string, string>>((acc, cookie) => {
+        const [key, value] = cookie.trim().split('=');
+        acc[key] = value;
+        return acc;
+      }, {});
+    return cookieObj.accessToken;
+  }
+
+  private notifyUserLeft(roomId: string, socketId: string) {
+    this.server.to(roomId).emit('user-left', socketId);
+    void this.broadcastRoomCount(roomId);
   }
 
   @SubscribeMessage('offer')
@@ -247,21 +244,6 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
-  @SubscribeMessage('test-room')
-  async handleTestRoom(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() roomId: string,
-  ) {
-    try {
-      const parsed = parseInt(roomId);
-
-      const room = await this.studyRoomService.findOne(parsed);
-      client.emit('test-result', { room, found: !!room });
-    } catch (error) {
-      client.emit('test-result', { error: error.message });
-    }
-  }
-
   @SubscribeMessage('send-message')
   async handleSendMessage(
     @ConnectedSocket() client: SocketWithUser,
@@ -310,6 +292,21 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() payload: { roomId: string; limit?: number; offset?: number },
   ) {
     try {
+      if (!client.user) {
+        client.emit('error', { message: '인증이 필요합니다.' });
+        return;
+      }
+
+      const isMember = await this.studyRoomService.checkMembership(
+        parseInt(payload.roomId),
+        client.user.id,
+      );
+
+      if (!isMember) {
+        client.emit('error', { message: '스터디룸 멤버가 아닙니다.' });
+        return;
+      }
+
       const messages = await this.chatService.getMessages(
         parseInt(payload.roomId),
         payload.limit || 50,
@@ -341,7 +338,12 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
       });
     } catch (error) {
       console.error('Delete message error:', error);
-      client.emit('error', { message: error.message });
+      client.emit('error', {
+        message:
+          error instanceof Error
+            ? error.message
+            : '메시지 삭제 중 오류가 발생했습니다.',
+      });
     }
   }
 
@@ -375,12 +377,12 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return this.getRoom(roomId)?.size ?? 0;
   }
 
-  private async getUserNickname(socketId: string): Promise<string> {
+  private getUserNickname(socketId: string): string {
     const userInfo = this.userSocketMap.get(socketId);
     return userInfo?.nickname || 'Unknown User';
   }
 
-  private async getExistingUsersInfo(roomId: string, excludeSocketId = '') {
+  private getExistingUsersInfo(roomId: string, excludeSocketId = '') {
     const room = this.server.sockets.adapter.rooms.get(roomId);
     if (!room) return [];
 
@@ -426,7 +428,7 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
           title: studyRoom.title,
           currentMembers: roomSize,
           maxMembers: studyRoom.maxMembers,
-          participants: await this.getExistingUsersInfo(roomId),
+          participants: this.getExistingUsersInfo(roomId),
         });
       }
     } catch (err) {
