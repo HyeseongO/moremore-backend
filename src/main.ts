@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import * as cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -12,7 +13,9 @@ async function bootstrap() {
     }),
   );
 
+  app.use(helmet());
   app.use(cookieParser());
+  app.enableShutdownHooks();
 
   app.enableCors({
     origin: process.env.FRONTEND_URL,
