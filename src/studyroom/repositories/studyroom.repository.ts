@@ -30,7 +30,7 @@ export class StudyroomRepository {
 
   async findById(id: number, include?: Prisma.StudyRoomInclude) {
     const result = this.prisma.studyRoom.findUnique({
-      where: { id },
+      where: { id, isDeleted: false },
       include,
     });
 
@@ -42,7 +42,7 @@ export class StudyroomRepository {
     include?: Prisma.StudyRoomInclude,
   ) {
     return this.prisma.studyRoom.findUnique({
-      where: { inviteCode, isActive: true },
+      where: { inviteCode, isActive: true, isDeleted: false },
       include,
     });
   }

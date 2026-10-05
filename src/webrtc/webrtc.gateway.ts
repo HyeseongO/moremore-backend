@@ -394,7 +394,9 @@ export class WebRTCGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private async broadcastRoomCount(roomId: string) {
     const currentMembers = this.getRoomSize(roomId);
-    const studyRoom = await this.studyRoomService.findOne(+roomId);
+    const studyRoom = await this.studyRoomService
+      .findOne(+roomId)
+      .catch(() => null);
 
     if (!studyRoom) return;
 

@@ -52,6 +52,7 @@ export class StudyroomService {
     return this.studyroomRepository.findAll({
       where: {
         isActive: true,
+        isDeleted: false,
         ...(options?.roomType && { roomType: options.roomType }),
         ...(options?.searchTitle && {
           title: {
