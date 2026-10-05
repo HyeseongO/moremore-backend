@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Headers,
   HttpCode,
   HttpStatus,
   Patch,
@@ -50,12 +51,14 @@ export class AccountController {
   async changePassword(
     @Request() req: AuthenticatedRequest,
     @Body() dto: ChangePasswordDto,
+    @Headers('user-agent') userAgent: string | undefined,
     @Response({ passthrough: true }) res: Res,
   ) {
     const tokens = await this.accountService.changePassword(
       req.user.id,
       dto.currentPassword,
       dto.newPassword,
+      userAgent,
     );
     this.authResponseService.setAuthCookies(res, tokens);
 

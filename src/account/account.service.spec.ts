@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { AccountService } from './account.service';
-import { AuthService } from '../auth/auth.service';
+import { SessionService } from '../auth/session.service';
 import { DemoAccountService } from '../auth/demo-account.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { WebRTCGateway } from '../webrtc/webrtc.gateway';
@@ -50,7 +50,10 @@ describe('AccountService', () => {
     studyRoom: { findMany: jest.Mock; deleteMany: jest.Mock };
     $transaction: jest.Mock;
   };
-  let authService: { issueTokens: jest.Mock };
+  let sessionService: {
+    createSession: jest.Mock;
+    revokeAllSessions: jest.Mock;
+  };
   let gateway: { alertRoomDeleted: jest.Mock };
   let service: AccountService;
 
@@ -78,10 +81,11 @@ describe('AccountService', () => {
         callback(prisma),
       ),
     };
-    authService = {
-      issueTokens: jest.fn(() =>
+    sessionService = {
+      createSession: jest.fn(() =>
         Promise.resolve({ accessToken: 'a', refreshToken: 'r' }),
       ),
+      revokeAllSessions: jest.fn(() => Promise.resolve()),
     };
     gateway = { alertRoomDeleted: jest.fn() };
     const config = {
@@ -90,7 +94,7 @@ describe('AccountService', () => {
 
     service = new AccountService(
       prisma as unknown as PrismaService,
-      authService as unknown as AuthService,
+      sessionService as unknown as SessionService,
       new DemoAccountService(config),
       gateway as unknown as WebRTCGateway,
     );
@@ -153,13 +157,23 @@ describe('AccountService', () => {
       );
     });
 
-    it('stores a new hash and issues new tokens', async () => {
-      const tokens = await service.changePassword(1, PASSWORD, 'Newpass1!');
+    it('stores a new hash, logs out other devices, and issues new tokens', async () => {
+      const tokens = await service.changePassword(
+        1,
+        PASSWORD,
+        'Newpass1!',
+        'Laptop',
+      );
       const [[{ data }]] = prisma.user.update.mock.calls as [
         [{ data: { password: string } }],
       ];
       expect(await bcrypt.compare('Newpass1!', data.password)).toBe(true);
-      expect(authService.issueTokens).toHaveBeenCalledWith(1, user.email);
+      expect(sessionService.revokeAllSessions).toHaveBeenCalledWith(1);
+      expect(sessionService.createSession).toHaveBeenCalledWith(
+        1,
+        user.email,
+        'Laptop',
+      );
       expect(tokens).toEqual({ accessToken: 'a', refreshToken: 'r' });
     });
   });

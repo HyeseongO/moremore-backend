@@ -9,14 +9,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SignUpDto } from './dtos/signup.dto';
 import { LoginDto } from './dtos/login.dto';
 import * as bcrypt from 'bcrypt';
-import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import { AuthProvider, User } from '@prisma/client';
 import { ErrorCode } from '../common/errors/error-code';
-
-export interface AuthTokens {
-  accessToken: string;
-  refreshToken: string;
-}
+import { AuthTokens, SessionService } from './session.service';
 
 interface AuthResponse {
   user: Omit<User, 'password' | 'refreshToken'>;
@@ -49,6 +44,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private sessionService: SessionService,
   ) {}
 
   async signUp(
@@ -70,13 +66,16 @@ export class AuthService {
     return this.sanitizeUser(user);
   }
 
-  async login(loginDto: LoginDto): Promise<AuthResponse> {
+  async login(loginDto: LoginDto, userAgent?: string): Promise<AuthResponse> {
     const { email, password } = loginDto;
 
     const user = await this.validateUserCredentials(email, password);
 
-    const tokens = await this.generateTokens(user.id, user.email);
-    await this.saveRefreshToken(user.id, tokens.refreshToken);
+    const tokens = await this.sessionService.createSession(
+      user.id,
+      user.email,
+      userAgent,
+    );
 
     return {
       user: this.sanitizeUser(user),
@@ -84,22 +83,25 @@ export class AuthService {
     };
   }
 
-  async processGoogleAuth(googleProfile: {
-    email: string;
-    googleId: string;
-    name: string;
-    picture: string;
-  }): Promise<GoogleAuthResponse> {
+  async processGoogleAuth(
+    googleProfile: {
+      email: string;
+      googleId: string;
+      name: string;
+      picture: string;
+    },
+    userAgent?: string,
+  ): Promise<GoogleAuthResponse> {
     const existingGoogleUser = await this.findUserByGoogleId(
       googleProfile.googleId,
     );
 
     if (existingGoogleUser) {
-      const tokens = await this.generateTokens(
+      const tokens = await this.sessionService.createSession(
         existingGoogleUser.id,
         existingGoogleUser.email,
+        userAgent,
       );
-      await this.saveRefreshToken(existingGoogleUser.id, tokens.refreshToken);
 
       return {
         type: 'SUCCESS',
@@ -126,6 +128,7 @@ export class AuthService {
   async completeGoogleSignUp(
     tempToken: string,
     nickname: string,
+    userAgent?: string,
   ): Promise<AuthResponse> {
     const googleData = await this.validateTempToken(tempToken);
 
@@ -140,8 +143,11 @@ export class AuthService {
       authProvider: 'GOOGLE',
     });
 
-    const tokens = await this.generateTokens(user.id, user.email);
-    await this.saveRefreshToken(user.id, tokens.refreshToken);
+    const tokens = await this.sessionService.createSession(
+      user.id,
+      user.email,
+      userAgent,
+    );
 
     return {
       user: this.sanitizeUser(user),
@@ -153,22 +159,11 @@ export class AuthService {
     userId: number,
     refreshToken: string,
   ): Promise<AuthTokens> {
-    const user = await this.validateRefreshToken(userId, refreshToken);
-
-    const tokens = await this.generateTokens(user.id, user.email);
-    await this.saveRefreshToken(user.id, tokens.refreshToken);
-
-    return tokens;
+    return this.sessionService.rotateSession(userId, refreshToken);
   }
 
-  async issueTokens(userId: number, email: string): Promise<AuthTokens> {
-    const tokens = await this.generateTokens(userId, email);
-    await this.saveRefreshToken(userId, tokens.refreshToken);
-    return tokens;
-  }
-
-  async logout(userId: number): Promise<void> {
-    await this.clearRefreshToken(userId);
+  async logout(userId: number, refreshToken?: string): Promise<void> {
+    await this.sessionService.revokeSession(userId, refreshToken);
   }
 
   async checkNicknameAvailability(
@@ -253,29 +248,6 @@ export class AuthService {
     return user;
   }
 
-  private async validateRefreshToken(
-    userId: number,
-    refreshToken: string,
-  ): Promise<User> {
-    const user = await this.findUserById(userId);
-
-    if (!user || !user.refreshToken) {
-      throw new UnauthorizedException({
-        code: ErrorCode.INVALID_TOKEN,
-        message: '유효하지 않은 토큰입니다.',
-      });
-    }
-
-    if (!this.matchesRefreshToken(refreshToken, user.refreshToken)) {
-      throw new UnauthorizedException({
-        code: ErrorCode.INVALID_TOKEN,
-        message: '유효하지 않은 토큰입니다.',
-      });
-    }
-
-    return user;
-  }
-
   private async checkEmailConflictForGoogleAuth(email: string): Promise<void> {
     const existingUser = await this.findUserByEmail(email);
 
@@ -342,68 +314,10 @@ export class AuthService {
     return this.prisma.user.create({ data });
   }
 
-  private async generateTokens(
-    userId: number,
-    email: string,
-  ): Promise<AuthTokens> {
-    const payload = { sub: userId, email };
-
-    const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync(payload, {
-        secret: this.configService.get<string>('JWT_SECRET'),
-        expiresIn: this.configService.get<string>('JWT_EXPIRES_IN', '15m'),
-      }),
-      this.jwtService.signAsync(
-        { ...payload, jti: randomUUID() },
-        {
-          secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-          expiresIn: this.configService.get<string>(
-            'JWT_REFRESH_EXPIRES_IN',
-            '7d',
-          ),
-        },
-      ),
-    ]);
-
-    return { accessToken, refreshToken };
-  }
-
   private async generateTempToken(payload: any): Promise<string> {
     return this.jwtService.sign(payload, {
       secret: this.configService.get<string>('JWT_SECRET'),
       expiresIn: '10m',
-    });
-  }
-
-  private async saveRefreshToken(
-    userId: number,
-    refreshToken: string,
-  ): Promise<void> {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { refreshToken: this.hashRefreshToken(refreshToken) },
-    });
-  }
-
-  private hashRefreshToken(refreshToken: string): string {
-    return createHash('sha256').update(refreshToken).digest('hex');
-  }
-
-  private matchesRefreshToken(
-    refreshToken: string,
-    storedHash: string,
-  ): boolean {
-    const actual = Buffer.from(this.hashRefreshToken(refreshToken), 'hex');
-    const expected = Buffer.from(storedHash, 'hex');
-    return (
-      actual.length === expected.length && timingSafeEqual(actual, expected)
-    );
-  }
-
-  private async clearRefreshToken(userId: number): Promise<void> {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { refreshToken: null },
     });
   }
 

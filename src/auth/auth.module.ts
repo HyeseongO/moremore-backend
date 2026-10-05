@@ -9,6 +9,7 @@ import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { AuthResponseService } from './auth-response.service';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { DemoAccountService } from './demo-account.service';
+import { SessionService } from './session.service';
 
 @Module({
   imports: [PassportModule, JwtModule.register({}), ConfigModule],
@@ -20,7 +21,13 @@ import { DemoAccountService } from './demo-account.service';
     JwtRefreshStrategy,
     GoogleStrategy,
     DemoAccountService,
+    SessionService,
   ],
-  exports: [AuthService, AuthResponseService, DemoAccountService],
+  exports: [
+    AuthService,
+    AuthResponseService,
+    DemoAccountService,
+    SessionService,
+  ],
 })
 export class AuthModule {}

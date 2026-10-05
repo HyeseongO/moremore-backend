@@ -7,7 +7,7 @@ import {
 import { Prisma, User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuthService } from '../auth/auth.service';
+import { SessionService } from '../auth/session.service';
 import { DemoAccountService } from '../auth/demo-account.service';
 import { WebRTCGateway } from '../webrtc/webrtc.gateway';
 import { ErrorCode } from '../common/errors/error-code';
@@ -25,7 +25,7 @@ const PUBLIC_USER_SELECT = {
 export class AccountService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly authService: AuthService,
+    private readonly sessionService: SessionService,
     private readonly demoAccountService: DemoAccountService,
     private readonly gateway: WebRTCGateway,
   ) {}
@@ -63,6 +63,7 @@ export class AccountService {
     userId: number,
     currentPassword: string,
     newPassword: string,
+    userAgent?: string,
   ) {
     const user = await this.findWritableUser(userId);
 
@@ -87,7 +88,8 @@ export class AccountService {
       data: { password: await bcrypt.hash(newPassword, 10) },
     });
 
-    return this.authService.issueTokens(user.id, user.email);
+    await this.sessionService.revokeAllSessions(user.id);
+    return this.sessionService.createSession(user.id, user.email, userAgent);
   }
 
   async deleteAccount(userId: number, password?: string) {

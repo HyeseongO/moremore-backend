@@ -11,6 +11,7 @@ import {
   UseGuards,
   BadRequestException,
   Header,
+  Headers,
 } from '@nestjs/common';
 import { Response as Res } from 'express';
 import { AuthService } from './auth.service';
@@ -36,14 +37,18 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   async signUp(
     @Body() signUpDto: SignUpDto,
+    @Headers('user-agent') userAgent: string | undefined,
     @Response({ passthrough: true }) res: Res,
   ) {
     const user = await this.authService.signUp(signUpDto);
 
-    const authResponse = await this.authService.login({
-      email: signUpDto.email,
-      password: signUpDto.password,
-    });
+    const authResponse = await this.authService.login(
+      {
+        email: signUpDto.email,
+        password: signUpDto.password,
+      },
+      userAgent,
+    );
 
     this.authResponseService.setAuthCookies(res, authResponse.tokens);
 
@@ -58,9 +63,10 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() loginDto: LoginDto,
+    @Headers('user-agent') userAgent: string | undefined,
     @Response({ passthrough: true }) res: Res,
   ) {
-    const authResponse = await this.authService.login(loginDto);
+    const authResponse = await this.authService.login(loginDto, userAgent);
 
     this.authResponseService.setAuthCookies(res, authResponse.tokens);
 
@@ -74,8 +80,12 @@ export class AuthController {
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  async logout(@Request() req, @Response({ passthrough: true }) res: Res) {
-    await this.authService.logout(req.user.id);
+  async logout(
+    @Request()
+    req: { user: { id: number }; cookies?: Record<string, string> },
+    @Response({ passthrough: true }) res: Res,
+  ) {
+    await this.authService.logout(req.user.id, req.cookies?.refreshToken);
 
     this.authResponseService.clearAuthCookies(res);
 
@@ -170,7 +180,11 @@ export class AuthController {
 
   @Get('google/callback')
   @UseGuards(GoogleCallbackGuard)
-  async googleAuthRedirect(@Request() req, @Response() res: Res) {
+  async googleAuthRedirect(
+    @Request() req,
+    @Headers('user-agent') userAgent: string | undefined,
+    @Response() res: Res,
+  ) {
     if (!req.user) {
       return res.redirect(
         this.authResponseService.getErrorRedirectUrl('google_login_failed'),
@@ -178,7 +192,10 @@ export class AuthController {
     }
 
     try {
-      const result = await this.authService.processGoogleAuth(req.user);
+      const result = await this.authService.processGoogleAuth(
+        req.user,
+        userAgent,
+      );
 
       if (result.type === 'PENDING') {
         this.authResponseService.setTempTokenCookie(res, result.tempToken);
@@ -204,6 +221,7 @@ export class AuthController {
   async completeGoogleSignUp(
     @Body('nickname') nickname: string,
     @Request() req,
+    @Headers('user-agent') userAgent: string | undefined,
     @Response({ passthrough: true }) res: Res,
   ) {
     const tempToken = req.cookies?.tempGoogleToken;
@@ -218,6 +236,7 @@ export class AuthController {
     const authResponse = await this.authService.completeGoogleSignUp(
       tempToken,
       nickname,
+      userAgent,
     );
 
     this.authResponseService.clearTempTokenCookie(res);

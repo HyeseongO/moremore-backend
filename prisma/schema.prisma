@@ -28,6 +28,7 @@ model User {
   joinedRooms   StudyRoomMember[]
 
   sentMessages  ChatMessage[]
+  sessions      RefreshSession[]
 
   @@index([email])
   @@index([nickname])
@@ -112,4 +113,18 @@ enum MemberRole {
   OWNER
   ADMIN
   MEMBER
+}
+
+model RefreshSession {
+  id         String   @id
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String
+  userAgent  String?  @db.VarChar(255)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
