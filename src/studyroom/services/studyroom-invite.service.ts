@@ -3,6 +3,7 @@ import { StudyroomRepository } from '../repositories/studyroom.repository';
 import { StudyroomMemberService } from './studyroom-member.service';
 import { StudyroomAuthService } from './studyroom-auth.service';
 import { ConfigService } from '@nestjs/config';
+import { ErrorCode } from '../../common/errors/error-code';
 
 @Injectable()
 export class StudyroomInviteService {
@@ -36,7 +37,10 @@ export class StudyroomInviteService {
     );
 
     if (!studyroom) {
-      throw new NotFoundException('유효하지 않은 초대 링크입니다.');
+      throw new NotFoundException({
+        code: ErrorCode.INVALID_INVITE_CODE,
+        message: '유효하지 않은 초대 링크입니다.',
+      });
     }
 
     return studyroom;

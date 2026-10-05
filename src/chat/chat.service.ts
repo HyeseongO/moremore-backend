@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { ErrorCode } from '../common/errors/error-code';
 
 @Injectable()
 export class ChatService {
@@ -60,7 +61,10 @@ export class ChatService {
     });
 
     if (!message) {
-      throw new Error('메시지를 찾을 수 없거나 권한이 없습니다.');
+      throw new NotFoundException({
+        code: ErrorCode.MESSAGE_NOT_FOUND,
+        message: '메시지를 찾을 수 없거나 권한이 없습니다.',
+      });
     }
 
     return await this.prisma.chatMessage.update({

@@ -21,6 +21,7 @@ import { JwtRefreshAuthGuard } from './guards/jwt-refresh.guard';
 import { JwtAuthGuard } from './guards/jwt.guard';
 import { GoogleCallbackGuard } from './guards/google-callback.guard';
 import { AuthGuard } from '@nestjs/passport';
+import { ErrorCode } from '../common/errors/error-code';
 
 @Controller('auth')
 export class AuthController {
@@ -105,7 +106,10 @@ export class AuthController {
   @Get('check-nickname')
   async checkNickname(@Query('nickname') nickname: string) {
     if (!nickname) {
-      throw new BadRequestException('닉네임을 입력해주세요.');
+      throw new BadRequestException({
+        code: ErrorCode.NICKNAME_REQUIRED,
+        message: '닉네임을 입력해주세요.',
+      });
     }
 
     const result = await this.authService.checkNicknameAvailability(nickname);
@@ -119,7 +123,10 @@ export class AuthController {
   @Get('check-email')
   async checkEmail(@Query('email') email: string) {
     if (!email) {
-      throw new BadRequestException('이메일을 입력해주세요.');
+      throw new BadRequestException({
+        code: ErrorCode.EMAIL_REQUIRED,
+        message: '이메일을 입력해주세요.',
+      });
     }
 
     const result = await this.authService.checkEmailAvailability(email);
@@ -195,7 +202,10 @@ export class AuthController {
     const tempToken = req.cookies?.tempGoogleToken;
 
     if (!tempToken) {
-      throw new BadRequestException('유효하지 않은 요청입니다.');
+      throw new BadRequestException({
+        code: ErrorCode.GOOGLE_SIGNUP_SESSION_MISSING,
+        message: '유효하지 않은 요청입니다.',
+      });
     }
 
     const authResponse = await this.authService.completeGoogleSignUp(

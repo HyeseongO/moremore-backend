@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
+import { ErrorCode } from '../../common/errors/error-code';
 
 @Injectable()
 export class JwtRefreshStrategy extends PassportStrategy(
@@ -39,7 +40,10 @@ export class JwtRefreshStrategy extends PassportStrategy(
     }
 
     if (!refreshToken) {
-      throw new UnauthorizedException('Refresh token not found');
+      throw new UnauthorizedException({
+        code: ErrorCode.REFRESH_TOKEN_MISSING,
+        message: 'Refresh token not found',
+      });
     }
 
     return {

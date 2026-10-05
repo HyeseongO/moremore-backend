@@ -8,6 +8,7 @@ import { StudyroomMemberRepository } from '../repositories/studyroom-member.repo
 import { StudyroomAuthService } from './studyroom-auth.service';
 import { MemberRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ErrorCode } from '../../common/errors/error-code';
 
 @Injectable()
 export class StudyroomMemberService {
@@ -24,18 +25,27 @@ export class StudyroomMemberService {
       roomId,
     );
     if (existingMember) {
-      throw new BadRequestException('이미 참여중인 스터디룸입니다.');
+      throw new BadRequestException({
+        code: ErrorCode.ALREADY_MEMBER,
+        message: '이미 참여중인 스터디룸입니다.',
+      });
     }
 
     const memberCount = await this.memberRepository.countByRoomId(roomId);
     const room = await this.studyroomRepository.findById(roomId);
 
     if (!room) {
-      throw new NotFoundException('스터디룸을 찾을 수 없습니다.');
+      throw new NotFoundException({
+        code: ErrorCode.STUDYROOM_NOT_FOUND,
+        message: '스터디룸을 찾을 수 없습니다.',
+      });
     }
 
     if (memberCount >= room.maxMembers) {
-      throw new BadRequestException('스터디룸이 가득 찼습니다.');
+      throw new BadRequestException({
+        code: ErrorCode.STUDYROOM_MEMBER_LIMIT,
+        message: '스터디룸이 가득 찼습니다.',
+      });
     }
 
     return this.memberRepository.create({
@@ -52,7 +62,10 @@ export class StudyroomMemberService {
     );
 
     if (!member) {
-      throw new NotFoundException('스터디룸 멤버가 아닙니다.');
+      throw new NotFoundException({
+        code: ErrorCode.NOT_STUDYROOM_MEMBER,
+        message: '스터디룸 멤버가 아닙니다.',
+      });
     }
 
     if (member.role === MemberRole.OWNER) {
@@ -61,9 +74,11 @@ export class StudyroomMemberService {
       if (memberCount === 1) {
         await this.studyroomRepository.deactivate(roomId);
       } else {
-        throw new BadRequestException(
-          '방장은 스터디룸을 나갈 수 없습니다. 먼저 방장을 위임하세요.',
-        );
+        throw new BadRequestException({
+          code: ErrorCode.OWNER_CANNOT_LEAVE,
+          message:
+            '방장은 스터디룸을 나갈 수 없습니다. 먼저 방장을 위임하세요.',
+        });
       }
     }
 
@@ -82,7 +97,10 @@ export class StudyroomMemberService {
       roomId,
     );
     if (!newOwnerMember) {
-      throw new NotFoundException('해당 사용자는 스터디룸 멤버가 아닙니다.');
+      throw new NotFoundException({
+        code: ErrorCode.TARGET_NOT_STUDYROOM_MEMBER,
+        message: '해당 사용자는 스터디룸 멤버가 아닙니다.',
+      });
     }
 
     const currentOwnerMember = await this.memberRepository.findByUserAndRoom(
@@ -123,7 +141,10 @@ export class StudyroomMemberService {
       roomId,
     );
     if (!member) {
-      throw new NotFoundException('스터디룸 멤버가 아닙니다.');
+      throw new NotFoundException({
+        code: ErrorCode.NOT_STUDYROOM_MEMBER,
+        message: '스터디룸 멤버가 아닙니다.',
+      });
     }
     return member;
   }

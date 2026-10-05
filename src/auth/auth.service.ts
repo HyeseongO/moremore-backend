@@ -10,6 +10,7 @@ import { SignUpDto } from './dtos/signup.dto';
 import { LoginDto } from './dtos/login.dto';
 import * as bcrypt from 'bcrypt';
 import { AuthProvider, User } from '@prisma/client';
+import { ErrorCode } from '../common/errors/error-code';
 
 interface AuthTokens {
   accessToken: string;
@@ -190,14 +191,20 @@ export class AuthService {
   private async validateEmailAvailability(email: string): Promise<void> {
     const exists = await this.isEmailExists(email);
     if (exists) {
-      throw new ConflictException('이미 사용중인 이메일입니다.');
+      throw new ConflictException({
+        code: ErrorCode.EMAIL_TAKEN,
+        message: '이미 사용중인 이메일입니다.',
+      });
     }
   }
 
   private async validateNicknameAvailability(nickname: string): Promise<void> {
     const exists = await this.isNicknameExists(nickname);
     if (exists) {
-      throw new ConflictException('이미 사용중인 닉네임입니다.');
+      throw new ConflictException({
+        code: ErrorCode.NICKNAME_TAKEN,
+        message: '이미 사용중인 닉네임입니다.',
+      });
     }
   }
 
@@ -208,24 +215,32 @@ export class AuthService {
     const user = await this.findUserByEmail(email);
 
     if (!user) {
-      throw new UnauthorizedException(
-        '이메일 또는 비밀번호가 올바르지 않습니다.',
-      );
+      throw new UnauthorizedException({
+        code: ErrorCode.INVALID_CREDENTIALS,
+        message: '이메일 또는 비밀번호가 올바르지 않습니다.',
+      });
     }
 
     if (user.authProvider === 'GOOGLE' && !user.password) {
-      throw new UnauthorizedException('구글 계정으로 로그인해주세요.');
+      throw new UnauthorizedException({
+        code: ErrorCode.GOOGLE_ACCOUNT_LOGIN_REQUIRED,
+        message: '구글 계정으로 로그인해주세요.',
+      });
     }
 
     if (!user.password) {
-      throw new UnauthorizedException('잘못된 사용자입니다.');
+      throw new UnauthorizedException({
+        code: ErrorCode.INVALID_USER,
+        message: '잘못된 사용자입니다.',
+      });
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      throw new UnauthorizedException(
-        '이메일 또는 비밀번호가 올바르지 않습니다.',
-      );
+      throw new UnauthorizedException({
+        code: ErrorCode.INVALID_CREDENTIALS,
+        message: '이메일 또는 비밀번호가 올바르지 않습니다.',
+      });
     }
 
     return user;
@@ -238,12 +253,18 @@ export class AuthService {
     const user = await this.findUserById(userId);
 
     if (!user || !user.refreshToken) {
-      throw new UnauthorizedException('유효하지 않은 토큰입니다.');
+      throw new UnauthorizedException({
+        code: ErrorCode.INVALID_TOKEN,
+        message: '유효하지 않은 토큰입니다.',
+      });
     }
 
     const isValid = await bcrypt.compare(refreshToken, user.refreshToken);
     if (!isValid) {
-      throw new UnauthorizedException('유효하지 않은 토큰입니다.');
+      throw new UnauthorizedException({
+        code: ErrorCode.INVALID_TOKEN,
+        message: '유효하지 않은 토큰입니다.',
+      });
     }
 
     return user;
@@ -253,9 +274,11 @@ export class AuthService {
     const existingUser = await this.findUserByEmail(email);
 
     if (existingUser && existingUser.authProvider === 'EMAIL') {
-      throw new ConflictException(
-        '이미 이메일로 가입된 계정입니다. 이메일 로그인을 이용해주세요.',
-      );
+      throw new ConflictException({
+        code: ErrorCode.EMAIL_ACCOUNT_EXISTS,
+        message:
+          '이미 이메일로 가입된 계정입니다. 이메일 로그인을 이용해주세요.',
+      });
     }
   }
 
@@ -266,17 +289,24 @@ export class AuthService {
       });
 
       if (decoded.type !== 'google-signup') {
-        throw new UnauthorizedException('유효하지 않은 토큰입니다.');
+        throw new UnauthorizedException({
+          code: ErrorCode.INVALID_TOKEN,
+          message: '유효하지 않은 토큰입니다.',
+        });
       }
 
       return decoded.googleData;
     } catch (error) {
       if (error.name === 'TokenExpiredError') {
-        throw new UnauthorizedException(
-          '토큰이 만료되었습니다. 다시 시도해주세요.',
-        );
+        throw new UnauthorizedException({
+          code: ErrorCode.TOKEN_EXPIRED,
+          message: '토큰이 만료되었습니다. 다시 시도해주세요.',
+        });
       }
-      throw new UnauthorizedException('유효하지 않은 토큰입니다.');
+      throw new UnauthorizedException({
+        code: ErrorCode.INVALID_TOKEN,
+        message: '유효하지 않은 토큰입니다.',
+      });
     }
   }
 

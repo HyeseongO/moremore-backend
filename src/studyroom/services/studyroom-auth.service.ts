@@ -6,6 +6,7 @@ import {
 import { StudyroomRepository } from '../repositories/studyroom.repository';
 import { StudyroomMemberRepository } from '../repositories/studyroom-member.repository';
 import { MemberRole } from '@prisma/client';
+import { ErrorCode } from '../../common/errors/error-code';
 
 @Injectable()
 export class StudyroomAuthService {
@@ -20,9 +21,10 @@ export class StudyroomAuthService {
       roomId,
     );
     if (!member) {
-      throw new ForbiddenException(
-        '스터디룸 멤버로 등록되지 않았습니다. 다시 확인해주세요!',
-      );
+      throw new ForbiddenException({
+        code: ErrorCode.NOT_STUDYROOM_MEMBER,
+        message: '스터디룸 멤버로 등록되지 않았습니다. 다시 확인해주세요!',
+      });
     }
     return member;
   }
@@ -30,12 +32,16 @@ export class StudyroomAuthService {
   async verifyOwner(roomId: number, userId: number) {
     const studyroom = await this.studyroomRepository.findById(roomId);
     if (!studyroom) {
-      throw new NotFoundException(
-        '스터디룸을 찾을 수 없습니다. 다시 확인해주세요!',
-      );
+      throw new NotFoundException({
+        code: ErrorCode.STUDYROOM_NOT_FOUND,
+        message: '스터디룸을 찾을 수 없습니다. 다시 확인해주세요!',
+      });
     }
     if (studyroom.ownerId !== userId) {
-      throw new ForbiddenException('방장 권한이 없습니다.');
+      throw new ForbiddenException({
+        code: ErrorCode.OWNER_ONLY,
+        message: '방장 권한이 없습니다.',
+      });
     }
 
     return studyroom;
@@ -45,7 +51,10 @@ export class StudyroomAuthService {
     const member = await this.verifyMember(roomId, userId);
 
     if (member.role !== MemberRole.OWNER && member.role !== MemberRole.ADMIN) {
-      throw new ForbiddenException('관리자 권한이 필요합니다.');
+      throw new ForbiddenException({
+        code: ErrorCode.ADMIN_ONLY,
+        message: '관리자 권한이 필요합니다.',
+      });
     }
 
     return member;

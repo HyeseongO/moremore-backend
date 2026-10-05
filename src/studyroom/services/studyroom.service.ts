@@ -12,6 +12,7 @@ import { UpdateStudyroomDto } from '../dtos/update-studyroom.dto';
 import { RoomType, MemberRole } from '@prisma/client';
 import { StudyroomAuthService } from './studyroom-auth.service';
 import { WebRTCGateway } from 'src/webrtc/webrtc.gateway';
+import { ErrorCode } from '../../common/errors/error-code';
 
 @Injectable()
 export class StudyroomService {
@@ -108,7 +109,10 @@ export class StudyroomService {
     });
 
     if (!studyroom || !studyroom.isActive) {
-      throw new NotFoundException('스터디룸을 찾을 수 없습니다.');
+      throw new NotFoundException({
+        code: ErrorCode.STUDYROOM_NOT_FOUND,
+        message: '스터디룸을 찾을 수 없습니다.',
+      });
     }
 
     return studyroom;
@@ -130,7 +134,10 @@ export class StudyroomService {
     const studyroom = await this.studyroomRepository.findById(id);
 
     if (!studyroom || !studyroom.isActive) {
-      throw new NotFoundException('스터디룸을 찾을 수 없습니다.');
+      throw new NotFoundException({
+        code: ErrorCode.STUDYROOM_NOT_FOUND,
+        message: '스터디룸을 찾을 수 없습니다.',
+      });
     }
 
     return studyroom;
@@ -146,14 +153,24 @@ export class StudyroomService {
 
   async deleteStudyRoom(roomId: number, requestId: number) {
     const room = await this.findOne(roomId);
-    if (!room) throw new NotFoundException('존재하지 않는 스터디룸 입니다.');
+    if (!room) {
+      throw new NotFoundException({
+        code: ErrorCode.STUDYROOM_NOT_FOUND,
+        message: '존재하지 않는 스터디룸 입니다.',
+      });
+    }
 
     if (room.ownerId !== requestId) {
       const isAdmin = await this.studyRoomAuthService.verifyAdminOrOwner(
         roomId,
         requestId,
       );
-      if (!isAdmin) throw new ForbiddenException('삭제 권한이 없습니다');
+      if (!isAdmin) {
+        throw new ForbiddenException({
+          code: ErrorCode.DELETE_FORBIDDEN,
+          message: '삭제 권한이 없습니다',
+        });
+      }
     }
     await this.studyroomRepository.softDeleteRoom(roomId);
     this.gateway.alertRoomDeleted(roomId);

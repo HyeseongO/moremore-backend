@@ -1,4 +1,4 @@
-import { forwardRef, HttpException, Inject } from '@nestjs/common';
+import { forwardRef, Inject } from '@nestjs/common';
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -14,6 +14,7 @@ import { StudyRoom, User } from '@prisma/client';
 import { AuthService } from 'src/auth/auth.service';
 import { ChatService } from 'src/chat/chat.service';
 import { StudyroomService } from 'src/studyroom/services/studyroom.service';
+import { ErrorCode, toErrorPayload } from 'src/common/errors/error-code';
 
 interface SocketWithUser extends Socket {
   user?: {
@@ -52,7 +53,10 @@ export class WebRTCGateway
   ) {
     try {
       if (!client.user) {
-        client.emit('error', { message: '인증이 필요합니다.' });
+        client.emit('error', {
+          code: ErrorCode.AUTH_REQUIRED,
+          message: '인증이 필요합니다.',
+        });
         return;
       }
 
@@ -62,7 +66,10 @@ export class WebRTCGateway
       ]);
 
       if (!isMember) {
-        client.emit('error', { message: '스터디룸 멤버가 아닙니다.' });
+        client.emit('error', {
+          code: ErrorCode.NOT_STUDYROOM_MEMBER,
+          message: '스터디룸 멤버가 아닙니다.',
+        });
         return;
       }
 
@@ -71,7 +78,9 @@ export class WebRTCGateway
 
       if (userCount >= studyRoom.maxMembers) {
         client.emit('room-full', {
+          code: ErrorCode.ROOM_FULL,
           message: `최대 ${studyRoom.maxMembers}명까지 입장 가능 합니다.`,
+          maxMembers: studyRoom.maxMembers,
         });
         return;
       }
@@ -102,12 +111,13 @@ export class WebRTCGateway
       client.emit('messages-history', recentMessages.reverse());
     } catch (error) {
       console.error('Join room error:', error);
-      client.emit('error', {
-        message:
-          error instanceof HttpException
-            ? error.message
-            : '방 입장 중 오류가 발생했습니다.',
-      });
+      client.emit(
+        'error',
+        toErrorPayload(error, {
+          code: ErrorCode.JOIN_ROOM_FAILED,
+          message: '방 입장 중 오류가 발생했습니다.',
+        }),
+      );
     }
   }
 
@@ -250,7 +260,10 @@ export class WebRTCGateway
   ) {
     try {
       if (!client.user) {
-        client.emit('error', { message: '인증이 필요합니다.' });
+        client.emit('error', {
+          code: ErrorCode.AUTH_REQUIRED,
+          message: '인증이 필요합니다.',
+        });
         return;
       }
 
@@ -260,7 +273,10 @@ export class WebRTCGateway
       );
 
       if (!isMember) {
-        client.emit('error', { message: '스터디룸 멤버가 아닙니다.' });
+        client.emit('error', {
+          code: ErrorCode.NOT_STUDYROOM_MEMBER,
+          message: '스터디룸 멤버가 아닙니다.',
+        });
         return;
       }
 
@@ -281,7 +297,10 @@ export class WebRTCGateway
       });
     } catch (error) {
       console.error('Send message error:', error);
-      client.emit('error', { message: '메시지 전송 중 오류가 발생했습니다.' });
+      client.emit('error', {
+        code: ErrorCode.MESSAGE_SEND_FAILED,
+        message: '메시지 전송 중 오류가 발생했습니다.',
+      });
     }
   }
 
@@ -292,7 +311,10 @@ export class WebRTCGateway
   ) {
     try {
       if (!client.user) {
-        client.emit('error', { message: '인증이 필요합니다.' });
+        client.emit('error', {
+          code: ErrorCode.AUTH_REQUIRED,
+          message: '인증이 필요합니다.',
+        });
         return;
       }
 
@@ -302,7 +324,10 @@ export class WebRTCGateway
       );
 
       if (!isMember) {
-        client.emit('error', { message: '스터디룸 멤버가 아닙니다.' });
+        client.emit('error', {
+          code: ErrorCode.NOT_STUDYROOM_MEMBER,
+          message: '스터디룸 멤버가 아닙니다.',
+        });
         return;
       }
 
@@ -315,7 +340,10 @@ export class WebRTCGateway
       client.emit('messages-history', messages.reverse());
     } catch (error) {
       console.error('Get messages error:', error);
-      client.emit('error', { message: '메시지 조회 중 오류가 발생했습니다.' });
+      client.emit('error', {
+        code: ErrorCode.MESSAGE_FETCH_FAILED,
+        message: '메시지 조회 중 오류가 발생했습니다.',
+      });
     }
   }
 
@@ -326,7 +354,10 @@ export class WebRTCGateway
   ) {
     try {
       if (!client.user) {
-        client.emit('error', { message: '인증이 필요합니다.' });
+        client.emit('error', {
+          code: ErrorCode.AUTH_REQUIRED,
+          message: '인증이 필요합니다.',
+        });
         return;
       }
 
@@ -337,12 +368,13 @@ export class WebRTCGateway
       });
     } catch (error) {
       console.error('Delete message error:', error);
-      client.emit('error', {
-        message:
-          error instanceof Error
-            ? error.message
-            : '메시지 삭제 중 오류가 발생했습니다.',
-      });
+      client.emit(
+        'error',
+        toErrorPayload(error, {
+          code: ErrorCode.MESSAGE_DELETE_FAILED,
+          message: '메시지 삭제 중 오류가 발생했습니다.',
+        }),
+      );
     }
   }
 
