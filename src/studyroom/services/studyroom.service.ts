@@ -126,6 +126,16 @@ export class StudyroomService {
     return this.findById(id);
   }
 
+  async findActiveRoom(id: number) {
+    const studyroom = await this.studyroomRepository.findById(id);
+
+    if (!studyroom || !studyroom.isActive) {
+      throw new NotFoundException('스터디룸을 찾을 수 없습니다.');
+    }
+
+    return studyroom;
+  }
+
   async checkMembership(roomId: number, userId: number): Promise<boolean> {
     const member = await this.memberRepository.findByUserAndRoom(
       userId,

@@ -89,15 +89,18 @@ export class StudyroomController {
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   async findOne(@Request() req, @Param('id', ParseIntPipe) id: number) {
-    const member = await this.authService.verifyMember(id, req.user.id);
-    const studyroom = await this.studyroomService.findById(id);
+    const [member, studyroom] = await Promise.all([
+      this.authService.verifyMember(id, req.user.id),
+      this.studyroomService.findById(id),
+    ]);
 
     return {
       ...studyroom,
       myRole: member.role,
-      inviteLink: (await this.authService.isOwner(id, req.user.id))
-        ? this.inviteService.generateInviteLink(studyroom.inviteCode)
-        : undefined,
+      inviteLink:
+        studyroom.ownerId === req.user.id
+          ? this.inviteService.generateInviteLink(studyroom.inviteCode)
+          : undefined,
     };
   }
 

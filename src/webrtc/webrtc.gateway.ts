@@ -10,6 +10,7 @@ import {
   MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { StudyRoom } from '@prisma/client';
 import { AuthService } from 'src/auth/auth.service';
 import { ChatService } from 'src/chat/chat.service';
 import { StudyroomService } from 'src/studyroom/services/studyroom.service';
@@ -50,30 +51,23 @@ export class WebRTCGateway
     @MessageBody() roomId: string,
   ) {
     try {
+      if (!client.user) {
+        client.emit('error', { message: '인증이 필요합니다.' });
+        return;
+      }
+
+      const [studyRoom, isMember] = await Promise.all([
+        this.studyRoomService.findActiveRoom(parseInt(roomId)),
+        this.studyRoomService.checkMembership(parseInt(roomId), client.user.id),
+      ]);
+
+      if (!isMember) {
+        client.emit('error', { message: '스터디룸 멤버가 아닙니다.' });
+        return;
+      }
+
       const room = this.server.sockets.adapter.rooms.get(roomId);
       const userCount = room ? room.size : 0;
-
-      const studyRoom = await this.studyRoomService.findOne(parseInt(roomId));
-      if (!studyRoom) {
-        client.emit('error', { message: '존재하지 않는 스터디룸입니다.' });
-        return;
-      }
-
-      if (!studyRoom.isActive) {
-        client.emit('error', { message: '비활성화된 스터디룸입니다.' });
-        return;
-      }
-
-      if (client.user) {
-        const isMember = await this.studyRoomService.checkMembership(
-          parseInt(roomId),
-          client.user.id,
-        );
-        if (!isMember) {
-          client.emit('error', { message: '스터디룸 멤버가 아닙니다.' });
-          return;
-        }
-      }
 
       if (userCount >= studyRoom.maxMembers) {
         client.emit('room-full', {
@@ -88,7 +82,6 @@ export class WebRTCGateway
       }
 
       await client.join(roomId);
-      await this.broadcastRoomCount(roomId);
 
       client.to(roomId).emit('user-joined', {
         userId: client.id,
@@ -98,7 +91,8 @@ export class WebRTCGateway
       const existingUsers = this.getExistingUsersInfo(roomId, client.id);
       client.emit('existing-users', existingUsers);
 
-      void this.sendRoomInfo(roomId);
+      void this.broadcastRoomCount(roomId, studyRoom);
+      void this.sendRoomInfo(roomId, studyRoom);
 
       const recentMessages = await this.chatService.getMessages(
         parseInt(roomId),
@@ -394,11 +388,11 @@ export class WebRTCGateway
       }));
   }
 
-  private async broadcastRoomCount(roomId: string) {
+  private async broadcastRoomCount(roomId: string, room?: StudyRoom) {
     const currentMembers = this.getRoomSize(roomId);
-    const studyRoom = await this.studyRoomService
-      .findOne(+roomId)
-      .catch(() => null);
+    const studyRoom =
+      room ??
+      (await this.studyRoomService.findActiveRoom(+roomId).catch(() => null));
 
     if (!studyRoom) return;
 
@@ -416,12 +410,13 @@ export class WebRTCGateway
     this.server.emit('room-count-update', payload);
   }
 
-  private async sendRoomInfo(roomId: string) {
+  private async sendRoomInfo(roomId: string, room?: StudyRoom) {
     const roomSize = this.getRoomSize(roomId);
     if (roomSize === 0) return;
 
     try {
-      const studyRoom = await this.studyRoomService.findOne(+roomId);
+      const studyRoom =
+        room ?? (await this.studyRoomService.findActiveRoom(+roomId));
       if (studyRoom) {
         this.server.to(roomId).emit('room-info', {
           roomId,
