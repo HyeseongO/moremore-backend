@@ -1,71 +1,64 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Response } from 'express';
+import { CookieOptions, Response } from 'express';
 
 interface AuthTokens {
   accessToken: string;
   refreshToken: string;
 }
 
+const SAME_SITE_VALUES = ['lax', 'strict', 'none'] as const;
+type SameSite = (typeof SAME_SITE_VALUES)[number];
+
 @Injectable()
 export class AuthResponseService {
-  constructor(private readonly configService: ConfigService) {}
+  private readonly baseCookieOptions: CookieOptions;
 
-  setAuthCookies(res: Response, tokens: AuthTokens): void {
+  constructor(private readonly configService: ConfigService) {
+    const sameSite = this.configService
+      .get<string>('COOKIE_SAME_SITE', 'lax')
+      .toLowerCase() as SameSite;
+    if (!SAME_SITE_VALUES.includes(sameSite)) {
+      throw new Error(`Invalid COOKIE_SAME_SITE: ${sameSite}`);
+    }
     const isProduction = this.configService.get('NODE_ENV') === 'production';
     const domain = this.configService.get<string>('COOKIE_DOMAIN');
 
-    res.cookie('accessToken', tokens.accessToken, {
+    this.baseCookieOptions = {
       httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      maxAge: 15 * 60 * 1000,
+      secure: isProduction || sameSite === 'none',
+      sameSite,
       path: '/',
       ...(domain && { domain }),
+    };
+  }
+
+  setAuthCookies(res: Response, tokens: AuthTokens): void {
+    res.cookie('accessToken', tokens.accessToken, {
+      ...this.baseCookieOptions,
+      maxAge: 15 * 60 * 1000,
     });
 
     res.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      path: '/',
+      ...this.baseCookieOptions,
       maxAge: 7 * 24 * 60 * 60 * 1000,
-      ...(domain && { domain }),
     });
   }
 
   setTempTokenCookie(res: Response, token: string): void {
-    const isProduction = this.configService.get('NODE_ENV') === 'production';
-    const domain = this.configService.get<string>('COOKIE_DOMAIN');
-
     res.cookie('tempGoogleToken', token, {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'lax',
+      ...this.baseCookieOptions,
       maxAge: 10 * 60 * 1000,
-      ...(domain && { domain }),
     });
   }
 
   clearAuthCookies(res: Response): void {
-    const domain = this.configService.get<string>('COOKIE_DOMAIN');
-
-    const cookieOptions = {
-      httpOnly: true,
-      ...(domain && { domain }),
-    };
-
-    res.clearCookie('accessToken', cookieOptions);
-    res.clearCookie('refreshToken', cookieOptions);
+    res.clearCookie('accessToken', this.baseCookieOptions);
+    res.clearCookie('refreshToken', this.baseCookieOptions);
   }
 
   clearTempTokenCookie(res: Response): void {
-    const domain = this.configService.get<string>('COOKIE_DOMAIN');
-
-    res.clearCookie('tempGoogleToken', {
-      httpOnly: true,
-      ...(domain && { domain }),
-    });
+    res.clearCookie('tempGoogleToken', this.baseCookieOptions);
   }
 
   getGoogleRedirectUrl(type: 'LOGIN_SUCCESS' | 'SIGNUP_FAIL'): string {
@@ -81,6 +74,6 @@ export class AuthResponseService {
 
   getErrorRedirectUrl(error: string): string {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
-    return `${frontendUrl}/login?error=${encodeURIComponent(error)}`;
+    return `${frontendUrl}/?error=${encodeURIComponent(error)}`;
   }
 }
