@@ -19,6 +19,7 @@ import { SignUpDto } from './dtos/signup.dto';
 import { LoginDto } from './dtos/login.dto';
 import { JwtRefreshAuthGuard } from './guards/jwt-refresh.guard';
 import { JwtAuthGuard } from './guards/jwt.guard';
+import { GoogleCallbackGuard } from './guards/google-callback.guard';
 import { AuthGuard } from '@nestjs/passport';
 
 @Controller('auth')
@@ -154,8 +155,14 @@ export class AuthController {
   async googleAuth() {}
 
   @Get('google/callback')
-  @UseGuards(AuthGuard('google'))
+  @UseGuards(GoogleCallbackGuard)
   async googleAuthRedirect(@Request() req, @Response() res: Res) {
+    if (!req.user) {
+      return res.redirect(
+        this.authResponseService.getErrorRedirectUrl('google_login_failed'),
+      );
+    }
+
     try {
       const result = await this.authService.processGoogleAuth(req.user);
 
